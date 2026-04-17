@@ -1,0 +1,16 @@
+pipeline:
+  name: "adult-income-mlops"
+  version: "1.0.0"
+
+paths:
+  raw_data_dir: "data/raw"
+  interim_data_dir: "data/interim"
+  processed_data_dir: "data/processed"
+  reports_dir: "outputs/reports"
+  quality_dir: "outputs/quality"
+  artifacts_dir: "artifacts"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+  datefmt: "%Y-%m-%d %H:%M:%S"

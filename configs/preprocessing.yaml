@@ -1,0 +1,20 @@
+preprocessing:
+  numeric_columns:
+    - "age"
+    - "educational-num"
+    - "capital-gain"
+    - "capital-loss"
+    - "hours-per-week"
+  categorical_columns:
+    - "workclass"
+    - "marital-status"
+    - "occupation"
+    - "relationship"
+    - "race"
+    - "gender"
+  dimensionality_reduction:
+    enabled: true
+    compare_with_baseline: true
+    method: "pca"
+    n_components: 0.95
+    random_state: 14
