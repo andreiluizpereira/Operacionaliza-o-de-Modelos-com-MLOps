@@ -166,7 +166,6 @@ def run(df: pd.DataFrame | None = None, config: dict[str, Any] | None = None) ->
     if not categorical_cols:
         raise ValueError("Missing preprocessing.categorical_columns in configs/preprocessing.yaml")
     reduction_cfg = _normalize_reduction_config(prep_cfg.get("dimensionality_reduction"))
-
     processed_dir = ensure_dir(project_root() / paths_cfg.get("processed_data_dir", "data/processed"))
     output_path = processed_dir / data_cfg.get("processed_filename", "adult_income_clean.parquet")
     cleaned.to_parquet(output_path, index=False)

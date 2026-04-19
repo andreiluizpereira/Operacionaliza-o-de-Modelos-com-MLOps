@@ -29,7 +29,7 @@ def load_yaml(path: Path) -> dict[str, Any]:
         return yaml.safe_load(fh) or {}
 
 
-# Antes de juntar varias configuracoes, esta funcao combina os pedaços com carinho.
+# Serve para o caso em que dois arquivos definem a mesma chave de topo com subestruturas internas. A função evita que um bloco inteiro seja sobrescrito quando só uma parte dele deveria mudar.
 # Ela vem antes do carregamento final porque preserva os valores antigos e troca so o necessario.
 def _deep_merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     merged = dict(base)

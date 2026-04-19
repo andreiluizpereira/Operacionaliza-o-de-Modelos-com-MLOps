@@ -33,7 +33,7 @@ Como apoio a analise, tambem vale observar:
 
 ## Reducao de dimensionalidade
 
-Para atender a rubrica de reducao de dimensionalidade, o projeto agora compara duas variantes de features dentro do pipeline:
+O projeto compara duas variantes de features dentro do pipeline:
 
 - `baseline`: pre-processamento com scaling e one-hot encoding, sem reducao;
 - `pca_95pct`: mesma preparacao, seguida de `PCA` configurado para preservar 95% da variancia.
@@ -48,21 +48,47 @@ No experimento atual:
 
 Na pratica, isso mostra que a reducao de dimensionalidade foi testada de forma correta, mas neste dataset ela nao superou a representacao original para a metrica de selecao escolhida.
 
-## Estrutura
-
-- `src/ingestion.py`: le o CSV bruto e salva uma copia em parquet.
-- `src/validation.py`: executa checagens simples de qualidade e gera relatorio JSON.
-- `src/preprocessing.py`: remove colunas, separa treino/teste, define o pre-processador e opcionalmente aplica reducao de dimensionalidade.
-- `src/train.py`: treina Perceptron, Decision Tree e Linear SVM nas variantes baseline e reduzida.
-- `src/evaluate.py`: gera o relatorio final do melhor modelo e registra a variante escolhida.
-- `configs/*.yaml`: centralizam caminhos, colunas, regras de qualidade e parametros de treino.
-- `main.py`: orquestra o fluxo completo.
-
 ## Como executar
 
 ```bash
 python main.py
 ```
+
+## Streamlit
+
+A interface usa os artefatos gerados pelo pipeline:
+
+- `artifacts/best_model.joblib`
+- `outputs/reports/evaluation_report.json`
+- `outputs/quality/quality_report.json`
+- `data/processed/adult_income_clean.parquet`
+
+Instale as dependencias e abra a aplicacao:
+
+```bash
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
+
+Se os artefatos ainda nao existirem, rode `python main.py` antes do comando do Streamlit.
+
+Para habilitar o rastreamento de experimentos, confirme que o pacote `mlflow` esta instalado no ambiente:
+
+```bash
+pip install mlflow
+```
+
+O tracking esta configurado em `configs/modeling.yaml` no bloco `modeling.mlflow`.
+
+## MLflow
+
+Depois de executar o pipeline, abra a UI local:
+
+```bash
+mlflow ui --backend-store-uri mlruns
+```
+
+A interface fica disponivel em `http://localhost:5000`.
 
 ## Saidas geradas
 
@@ -73,7 +99,8 @@ python main.py
 - `outputs/reports/training_summary.json`
 - `outputs/reports/evaluation_report.json`
 - `artifacts/best_model.joblib`
+- `mlruns/`
 
 ## Observacao
 
-O modelo selecionado neste fluxo foi `decision_tree`, com F1-macro de teste de aproximadamente `0.7864`.
+O modelo selecionado neste fluxo foi `decision_tree` sem redução de dimensionalidade, com F1-macro de teste de aproximadamente `0.7864`.

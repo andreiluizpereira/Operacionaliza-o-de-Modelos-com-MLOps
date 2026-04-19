@@ -1,18 +1,29 @@
 modeling:
   random_state: 14
+  mlflow:
+    enabled: true
+    experiment_name: "adult-income-experiments"
+    tracking_uri: "mlruns"
+    run_name_prefix: "baseline"
+    log_model: true
+
   holdout:
     test_size: 0.3
     random_state: 14
+
   cv:
     n_splits: 10
     shuffle: true
+
   best_model_filename: "best_model.joblib"
   comparison_filename: "model_comparison.csv"
   training_summary_filename: "training_summary.json"
   evaluation_filename: "evaluation_report.json"
+
   perceptron:
     enabled: true
     max_iter: 1000
+
   decision_tree:
     enabled: true
     n_iter: 20
@@ -26,6 +37,7 @@ modeling:
     class_weight_choices:
       - null
       - "balanced"
+      
   linear_svm:
     enabled: true
     max_iter: 5000

@@ -5,6 +5,7 @@ preprocessing:
     - "capital-gain"
     - "capital-loss"
     - "hours-per-week"
+
   categorical_columns:
     - "workclass"
     - "marital-status"
@@ -12,6 +13,7 @@ preprocessing:
     - "relationship"
     - "race"
     - "gender"
+    
   dimensionality_reduction:
     enabled: true
     compare_with_baseline: true

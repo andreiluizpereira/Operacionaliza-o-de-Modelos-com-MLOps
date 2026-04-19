@@ -2,6 +2,7 @@
 __pycache__/
 artifacts/
 outputs/
+mlruns/
 data/interim/
 data/processed/
 *.py[codz]

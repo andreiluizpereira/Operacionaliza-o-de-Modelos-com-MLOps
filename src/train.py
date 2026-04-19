@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+from pathlib import Path
 from typing import Any
 
 import joblib
@@ -24,6 +26,53 @@ def _compute_metrics(y_true, y_pred) -> dict[str, float]:
         "precision_macro": float(precision_score(y_true, y_pred, average="macro", zero_division=0)),
         "recall_macro": float(recall_score(y_true, y_pred, average="macro", zero_division=0)),
         "f1_macro": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
+    }
+
+
+def _mlflow_param_value(value: Any) -> Any:
+    if value is None:
+        return "None"
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _init_mlflow(modeling_cfg: dict[str, Any], root: Path, logger) -> dict[str, Any] | None:
+    mlflow_cfg = modeling_cfg.get("mlflow", {})
+    enabled = bool(mlflow_cfg.get("enabled", False))
+    if not enabled:
+        return None
+
+    try:
+        import mlflow
+    except ImportError as exc:
+        raise ImportError(
+            "MLflow is enabled in configs/modeling.yaml, but the package is not installed. Install with `pip install mlflow`."
+        ) from exc
+
+    tracking_cfg = str(mlflow_cfg.get("tracking_uri", modeling_cfg.get("tracking_uri", "mlruns")))
+    experiment_name = str(
+        mlflow_cfg.get("experiment_name", modeling_cfg.get("experiment_name", "adult-income-experiments"))
+    )
+    run_name_prefix = str(mlflow_cfg.get("run_name_prefix", "baseline"))
+    log_model = bool(mlflow_cfg.get("log_model", False))
+
+    if "://" in tracking_cfg:
+        tracking_uri = tracking_cfg
+    else:
+        # as_uri() avoids Windows path parsing issues (e.g. drive letters seen as URI schemes)
+        tracking_uri = (root / tracking_cfg).resolve().as_uri()
+
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
+    logger.info("MLflow enabled | experiment=%s | tracking_uri=%s", experiment_name, tracking_uri)
+
+    return {
+        "client": mlflow,
+        "tracking_uri": tracking_uri,
+        "experiment_name": experiment_name,
+        "run_name_prefix": run_name_prefix,
+        "log_model": log_model,
     }
 
 
@@ -98,9 +147,9 @@ def _build_pipeline(
 
 # Antes de escolher o melhor modelo, esta funcao mede o desempenho medio do treino.
 # Ela roda durante a validacao cruzada para evitar que uma divisao unica engane a gente.
-def _cv_mean_f1(pipe: Pipeline, X_train, y_train, cv: StratifiedKFold) -> float:
+def _cv_f1_scores(pipe: Pipeline, X_train, y_train, cv: StratifiedKFold) -> list[float]:
     scores = cross_val_score(pipe, X_train, y_train, scoring="f1_macro", cv=cv, n_jobs=1)
-    return float(scores.mean())
+    return [float(score) for score in scores]
 
 
 # Antes de salvar o resultado, esta funcao conta quantas features sobraram e o que a reducao fez.
@@ -166,12 +215,17 @@ def _model_record(
     base_model_name: str,
     feature_variant: str,
     trained_model: Pipeline,
-    cv_score: float,
+    cv_scores: list[float],
     best_params: dict[str, Any],
     holdout_metrics: dict[str, float],
     reduction_cfg: dict[str, Any] | None,
     X_train,
+    training_time_s: float,
 ) -> dict[str, Any]:
+    cv_series = pd.Series(cv_scores, dtype=float)
+    cv_mean = float(cv_series.mean())
+    cv_std = float(cv_series.std(ddof=0)) if len(cv_scores) > 1 else 0.0
+
     record = {
         "model": base_model_name,
         "model_id": f"{base_model_name}__{feature_variant}",
@@ -179,9 +233,12 @@ def _model_record(
         "uses_dimensionality_reduction": bool(reduction_cfg and reduction_cfg.get("enabled", False)),
         "reduction_method": None if reduction_cfg is None else reduction_cfg.get("method"),
         "reduction_n_components": None if reduction_cfg is None else reduction_cfg.get("n_components"),
-        "cv_f1_macro": cv_score,
+        "cv_f1_macro": cv_mean,
+        "cv_f1_macro_std": cv_std,
+        "cv_fold_f1_macro": cv_scores,
         "best_params": best_params,
         "holdout_metrics": holdout_metrics,
+        "training_time_s": training_time_s,
     }
     record.update(_extract_feature_metadata(trained_model, X_train))
 
@@ -193,6 +250,71 @@ def _model_record(
         record["interpretability_note"] = "Direct feature names are preserved in the baseline representation."
 
     return record | {"model_obj": trained_model}
+
+
+def _log_mlflow_run(mlflow_state: dict[str, Any], record: dict[str, Any], logger) -> None:
+    mlflow = mlflow_state["client"]
+    run_name = f"{mlflow_state['run_name_prefix']}_{record['model_id']}"
+    reduction_method = record.get("reduction_method") or "none"
+
+    with mlflow.start_run(
+        run_name=run_name,
+        tags={
+            "stage": "baseline",
+            "model": record["model"],
+            "feature_variant": record["feature_variant"],
+        },
+    ):
+        params = {
+            **record.get("best_params", {}),
+            "model_id": record["model_id"],
+            "feature_variant": record["feature_variant"],
+            "uses_dimensionality_reduction": record["uses_dimensionality_reduction"],
+            "reduction_method": reduction_method,
+            "reduction_n_components": record.get("reduction_n_components"),
+        }
+        mlflow.log_params({str(k): _mlflow_param_value(v) for k, v in params.items()})
+
+        model_obj = record.get("model_obj")
+        estimator = None
+        if model_obj is not None and hasattr(model_obj, "named_steps"):
+            estimator = model_obj.named_steps.get("model")
+
+        if estimator is not None:
+            mlflow.set_tag("model_class", f"{estimator.__class__.__module__}.{estimator.__class__.__name__}")
+        mlflow.set_tag("reducer_method", str(reduction_method))
+
+        for step, score in enumerate(record.get("cv_fold_f1_macro", []), start=1):
+            mlflow.log_metric("fold_f1_macro", float(score), step=step)
+
+        mlflow.log_metric("cv_f1_macro", float(record.get("cv_f1_macro", 0.0)))
+        mlflow.log_metric("cv_f1_macro_std", float(record.get("cv_f1_macro_std", 0.0)))
+        mlflow.log_metric("training_time_s", float(record.get("training_time_s", 0.0)))
+
+        holdout_metrics = record.get("holdout_metrics", {})
+        for metric_name, metric_value in holdout_metrics.items():
+            mlflow.log_metric(f"holdout_{metric_name}", float(metric_value))
+
+        for key in (
+            "feature_count_before_reduction",
+            "feature_count_after_reduction",
+            "reduction_effective_components",
+            "reduction_explained_variance_ratio",
+        ):
+            value = record.get(key)
+            if value is None:
+                continue
+            if isinstance(value, float) and pd.isna(value):
+                continue
+            mlflow.log_metric(key, float(value))
+
+        if mlflow_state.get("log_model", False) and model_obj is not None:
+            try:
+                import mlflow.sklearn
+
+                mlflow.sklearn.log_model(model_obj, artifact_path="model")
+            except Exception as exc:  # pragma: no cover - best effort artifact logging
+                logger.warning("MLflow model artifact logging failed for %s: %s", record["model_id"], exc)
 
 
 # Antes de comparar as variantes, esta funcao treina o Perceptron e mede o resultado.
@@ -216,18 +338,21 @@ def _train_perceptron(
         categorical_columns,
         reduction_config=reduction_config,
     )
-    cv_score = _cv_mean_f1(pipe, X_train, y_train, cv)
+    t0 = time.time()
+    cv_scores = _cv_f1_scores(pipe, X_train, y_train, cv)
     model = pipe.fit(X_train, y_train)
     preds = model.predict(X_test)
+    training_time_s = float(time.time() - t0)
     return _model_record(
         base_model_name="perceptron",
         feature_variant=feature_variant,
         trained_model=model,
-        cv_score=cv_score,
+        cv_scores=cv_scores,
         best_params={"random_state": seed, "max_iter": max_iter},
         holdout_metrics=_compute_metrics(y_test, preds),
         reduction_cfg=reduction_config,
         X_train=X_train,
+        training_time_s=training_time_s,
     )
 
 
@@ -274,17 +399,28 @@ def _train_decision_tree(
         n_jobs=1,
         error_score=0,
     )
+    t0 = time.time()
     search.fit(X_train, y_train)
     preds = search.best_estimator_.predict(X_test)
+    cv_scores: list[float] = []
+    best_index = int(search.best_index_)
+    for split_idx in range(cv.get_n_splits()):
+        split_key = f"split{split_idx}_test_score"
+        if split_key in search.cv_results_:
+            cv_scores.append(float(search.cv_results_[split_key][best_index]))
+    if not cv_scores:
+        cv_scores = [float(search.best_score_)]
+    training_time_s = float(time.time() - t0)
     return _model_record(
         base_model_name="decision_tree",
         feature_variant=feature_variant,
         trained_model=search.best_estimator_,
-        cv_score=float(search.best_score_),
+        cv_scores=cv_scores,
         best_params=search.best_params_,
         holdout_metrics=_compute_metrics(y_test, preds),
         reduction_cfg=reduction_config,
         X_train=X_train,
+        training_time_s=training_time_s,
     )
 
 
@@ -309,18 +445,21 @@ def _train_linear_svm(
         categorical_columns,
         reduction_config=reduction_config,
     )
-    cv_score = _cv_mean_f1(pipe, X_train, y_train, cv)
+    t0 = time.time()
+    cv_scores = _cv_f1_scores(pipe, X_train, y_train, cv)
     model = pipe.fit(X_train, y_train)
     preds = model.predict(X_test)
+    training_time_s = float(time.time() - t0)
     return _model_record(
         base_model_name="linear_svm",
         feature_variant=feature_variant,
         trained_model=model,
-        cv_score=cv_score,
+        cv_scores=cv_scores,
         best_params={"random_state": seed, "max_iter": max_iter},
         holdout_metrics=_compute_metrics(y_test, preds),
         reduction_cfg=reduction_config,
         X_train=X_train,
+        training_time_s=training_time_s,
     )
 
 
@@ -342,6 +481,8 @@ def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None
     if bool(reduction_cfg.get("compare_with_baseline", False)) and not bool(reduction_cfg.get("enabled", False)):
         logger.warning("compare_with_baseline is true, but dimensionality reduction is disabled. Running baseline only.")
 
+    mlflow_state = _init_mlflow(modeling_cfg, project_root(), logger)
+
     X_train = prep_result["X_train"]
     y_train = prep_result["y_train"]
     X_test = prep_result["X_test"]
@@ -359,10 +500,12 @@ def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None
     results: list[dict[str, Any]] = []
     trained_models: dict[str, Any] = {}
 
+    # treina cada modelo para variante baseline das features, depois treina cada modelo para variante reduzida com PCA (se habilitada), e guarda os resultados padronizados.
     for variant in feature_variants:
         feature_variant = variant["feature_variant"]
         variant_reduction_cfg = variant["reduction_config"]
 
+        # treinamento do Perceptron
         if modeling_cfg.get("perceptron", {}).get("enabled", True):
             logger.info("Training perceptron [%s]", feature_variant)
             out = _train_perceptron(
@@ -378,9 +521,12 @@ def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None
                 feature_variant=feature_variant,
                 reduction_config=variant_reduction_cfg,
             )
+            if mlflow_state is not None:
+                _log_mlflow_run(mlflow_state, out, logger)
             results.append({k: v for k, v in out.items() if k != "model_obj"})
             trained_models[out["model_id"]] = out["model_obj"]
 
+        # treinamento da Decision Tree
         if modeling_cfg.get("decision_tree", {}).get("enabled", True):
             logger.info("Training decision_tree [%s]", feature_variant)
             out = _train_decision_tree(
@@ -396,9 +542,12 @@ def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None
                 feature_variant=feature_variant,
                 reduction_config=variant_reduction_cfg,
             )
+            if mlflow_state is not None:
+                _log_mlflow_run(mlflow_state, out, logger)
             results.append({k: v for k, v in out.items() if k != "model_obj"})
             trained_models[out["model_id"]] = out["model_obj"]
 
+        # treinamento do SVM linear
         if modeling_cfg.get("linear_svm", {}).get("enabled", True):
             logger.info("Training linear_svm [%s]", feature_variant)
             out = _train_linear_svm(
@@ -414,6 +563,8 @@ def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None
                 feature_variant=feature_variant,
                 reduction_config=variant_reduction_cfg,
             )
+            if mlflow_state is not None:
+                _log_mlflow_run(mlflow_state, out, logger)
             results.append({k: v for k, v in out.items() if k != "model_obj"})
             trained_models[out["model_id"]] = out["model_obj"]
 
@@ -448,6 +599,11 @@ def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None
             "random_state": seed,
         },
         "feature_variants": [variant["feature_variant"] for variant in feature_variants],
+        "mlflow": {
+            "enabled": mlflow_state is not None,
+            "tracking_uri": None if mlflow_state is None else mlflow_state["tracking_uri"],
+            "experiment_name": None if mlflow_state is None else mlflow_state["experiment_name"],
+        },
         "trained_models": trained_models,
         "data": {
             "X_test": X_test,
@@ -464,6 +620,11 @@ def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None
             "comparison_path": str(comparison_path),
             "best_model_metadata": best_model_metadata,
             "comparison": comparison_records,
+            "mlflow": {
+                "enabled": mlflow_state is not None,
+                "tracking_uri": None if mlflow_state is None else mlflow_state["tracking_uri"],
+                "experiment_name": None if mlflow_state is None else mlflow_state["experiment_name"],
+            },
         },
         reports_dir / modeling_cfg.get("training_summary_filename", "training_summary.json"),
     )
