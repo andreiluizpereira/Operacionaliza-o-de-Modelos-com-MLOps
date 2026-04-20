@@ -8,8 +8,6 @@ from sklearn.metrics import classification_report, confusion_matrix, accuracy_sc
 from src.utils import ensure_dir, get_logger, load_project_config, project_root, save_json
 
 
-# Antes do relatorio final, esta funcao converte a predicao em notas pequenas e comparaveis.
-# Ela roda sempre no fim porque usa os dados que sobraram depois do treino.
 def _compute_metrics(y_true, y_pred) -> dict[str, float]:
     return {
         "accuracy": float(accuracy_score(y_true, y_pred)),
@@ -19,8 +17,6 @@ def _compute_metrics(y_true, y_pred) -> dict[str, float]:
     }
 
 
-# Depois que o treino escolhe o vencedor, esta funcao mede como ele se saiu no teste.
-# Ela roda por ultimo porque fecha o ciclo do pipeline com um relatorio unico.
 def run(train_result: dict[str, Any] | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = config or load_project_config()
     logger = get_logger(__name__, cfg.get("logging"))

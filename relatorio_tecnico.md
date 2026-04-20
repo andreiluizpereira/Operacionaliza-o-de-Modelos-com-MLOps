@@ -240,7 +240,8 @@ O MLflow está habilitado em `configs/modeling.yaml` com:
 - `enabled: true`;
 - `experiment_name: adult-income-experiments`;
 - `tracking_uri: mlruns`;
-- `run_name_prefix: baseline`.
+- `run_name_prefix: baseline`;
+- `log_model: true`.
 
 O treino registra:
 
@@ -252,6 +253,7 @@ O treino registra:
 - tempo de treino;
 - metadados de redução de dimensionalidade;
 - quantidade de features antes e depois da redução.
+- artefato do pipeline scikit-learn treinado em cada run, incluindo o melhor modelo selecionado.
 
 A UI local pode ser aberta com:
 
@@ -267,7 +269,7 @@ O projeto também salva os resultados em arquivos locais:
 - `outputs/quality/quality_report.json`;
 - `artifacts/best_model.joblib`.
 
-Observação: a configuração atual usa `log_model: false`, portanto o modelo final é salvo em `artifacts/best_model.joblib`, mas não é versionado como artefato de modelo dentro do MLflow. Para uma entrega com rastreabilidade mais forte no MLflow, essa configuração pode ser alterada para `true`.
+Observação: a configuração atual usa `log_model: true`, portanto o pipeline scikit-learn treinado também é registrado como artefato de modelo no MLflow. O melhor modelo continua salvo localmente em `artifacts/best_model.joblib` para consumo direto pela aplicação.
 
 ## 14. Reprodutibilidade
 
@@ -306,24 +308,11 @@ As principais limitações identificadas são:
 
 - o ajuste de hiperparâmetros mais completo foi aplicado apenas à árvore de decisão;
 - o modelo final ainda tem recall moderado para a classe positiva;
-- o modelo não está versionado como artefato no MLflow porque `log_model` está desabilitado;
 - não há estratégia implementada de monitoramento de drift;
 - não há política formal de retreinamento;
 - a interface Streamlit apoia demonstração e uso local, mas não substitui uma API ou serviço de produção.
 
-## 16. Próximos passos recomendados
-
-Para evoluir o projeto, os próximos passos mais relevantes são:
-
-- habilitar `log_model: true` para registrar o modelo final no MLflow;
-- incluir busca de hiperparâmetros para Linear SVM e outros modelos candidatos;
-- avaliar modelos adicionais, como Logistic Regression, Random Forest ou Gradient Boosting;
-- analisar limiares de decisão para melhorar o recall da classe `> 50K`;
-- documentar critérios de monitoramento em operação;
-- criar uma política de retreinamento baseada em degradação de métricas ou drift de dados;
-- definir uma camada de inferência mais próxima de produção, como API com FastAPI.
-
-## 17. Conclusão
+## 16. Conclusão
 
 O projeto atende ao entregável técnico de repositório organizado com pipeline de dados e modelos, código de experimentação e configuração de MLflow. Também possui resultados experimentais suficientes para justificar a abordagem final.
 

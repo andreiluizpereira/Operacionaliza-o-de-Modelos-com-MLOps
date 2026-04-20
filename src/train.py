@@ -18,8 +18,6 @@ from src.preprocessing import build_preprocessor
 from src.utils import ensure_dir, get_logger, load_project_config, project_root, save_json
 
 
-# Antes de comparar modelos, esta funcao transforma acertos e erros em numeros simples.
-# Ela roda logo depois da predicao para que as variantes sejam comparadas do mesmo jeito.
 def _compute_metrics(y_true, y_pred) -> dict[str, float]:
     return {
         "accuracy": float(accuracy_score(y_true, y_pred)),
@@ -60,7 +58,6 @@ def _init_mlflow(modeling_cfg: dict[str, Any], root: Path, logger) -> dict[str, 
     if "://" in tracking_cfg:
         tracking_uri = tracking_cfg
     else:
-        # as_uri() avoids Windows path parsing issues (e.g. drive letters seen as URI schemes)
         tracking_uri = (root / tracking_cfg).resolve().as_uri()
 
     mlflow.set_tracking_uri(tracking_uri)
@@ -76,8 +73,6 @@ def _init_mlflow(modeling_cfg: dict[str, Any], root: Path, logger) -> dict[str, 
     }
 
 
-# Antes de treinar cada modelo, esta funcao cria um nome curto para a variante das features.
-# Ela roda junto com a configuracao para separar baseline e reducao sem confusao.
 def _format_reduction_label(reduction_cfg: dict[str, Any]) -> str:
     method = str(reduction_cfg.get("method", "pca")).lower()
     n_components = reduction_cfg.get("n_components", 0.95)
@@ -91,8 +86,6 @@ def _format_reduction_label(reduction_cfg: dict[str, Any]) -> str:
     return f"{method}_{component_label}"
 
 
-# Antes de chamar os modelos, esta funcao decide quais variantes de features vao entrar.
-# Ela roda antes do treino porque organiza se teremos baseline, reducao, ou os dois.
 def _feature_variants(reduction_cfg: dict[str, Any] | None) -> list[dict[str, Any]]:
     cfg = dict(reduction_cfg or {})
     enabled = bool(cfg.get("enabled", False))
@@ -122,8 +115,6 @@ def _feature_variants(reduction_cfg: dict[str, Any] | None) -> list[dict[str, An
     return [reduced]
 
 
-# Antes do treino, esta funcao junta pre-processamento e modelo num unico pacote.
-# Ela roda depois da preparacao dos dados porque o modelo precisa receber tudo pronto.
 def _build_pipeline(
     estimator,
     numeric_columns: list[str],
@@ -145,15 +136,11 @@ def _build_pipeline(
     )
 
 
-# Antes de escolher o melhor modelo, esta funcao mede o desempenho medio do treino.
-# Ela roda durante a validacao cruzada para evitar que uma divisao unica engane a gente.
 def _cv_f1_scores(pipe: Pipeline, X_train, y_train, cv: StratifiedKFold) -> list[float]:
     scores = cross_val_score(pipe, X_train, y_train, scoring="f1_macro", cv=cv, n_jobs=1)
     return [float(score) for score in scores]
 
 
-# Antes de salvar o resultado, esta funcao conta quantas features sobraram e o que a reducao fez.
-# Ela roda depois do treino para comparar a versao original com a versao comprimida.
 def _extract_feature_metadata(model: Pipeline, X_train) -> dict[str, Any]:
     sample = X_train.iloc[: min(20, len(X_train))]
     preprocessor = model.named_steps["preprocessor"]
@@ -191,8 +178,6 @@ def _extract_feature_metadata(model: Pipeline, X_train) -> dict[str, Any]:
     return metadata
 
 
-# Antes de guardar um dicionario em JSON, esta funcao troca valores estranhos por None.
-# Ela roda antes do relatorio porque o JSON precisa ficar limpo e facil de ler.
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
@@ -203,14 +188,10 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
-# Antes de exportar a comparacao, esta funcao limpa cada linha para caber bem no JSON.
-# Ela roda logo antes do arquivo final para evitar valores quebrados no relatorio.
 def _json_safe_records(df: pd.DataFrame) -> list[dict[str, Any]]:
     return [_json_safe(record) for record in df.to_dict(orient="records")]
 
 
-# Antes de escolher o vencedor, esta funcao junta modelo, metricas e explicacao em um so bloco.
-# Ela roda depois do treino de cada algoritmo porque cada rodada precisa virar um registro padrao.
 def _model_record(
     base_model_name: str,
     feature_variant: str,
@@ -313,12 +294,10 @@ def _log_mlflow_run(mlflow_state: dict[str, Any], record: dict[str, Any], logger
                 import mlflow.sklearn
 
                 mlflow.sklearn.log_model(model_obj, artifact_path="model")
-            except Exception as exc:  # pragma: no cover - best effort artifact logging
+            except Exception as exc:
                 logger.warning("MLflow model artifact logging failed for %s: %s", record["model_id"], exc)
 
 
-# Antes de comparar as variantes, esta funcao treina o Perceptron e mede o resultado.
-# Ela roda dentro do experimento para servir como baseline simples e rapido.
 def _train_perceptron(
     seed: int,
     max_iter: int,
@@ -356,8 +335,6 @@ def _train_perceptron(
     )
 
 
-# Antes de comparar as variantes, esta funcao treina a arvore e procura bons hiperparametros.
-# Ela roda no meio do experimento porque e o modelo com ajuste mais cuidadoso.
 def _train_decision_tree(
     seed: int,
     cfg: dict[str, Any],
@@ -424,8 +401,6 @@ def _train_decision_tree(
     )
 
 
-# Antes de comparar as variantes, esta funcao treina o SVM linear e mede o resultado.
-# Ela roda junto das outras para servir como baseline linear mais forte.
 def _train_linear_svm(
     seed: int,
     max_iter: int,
@@ -463,8 +438,6 @@ def _train_linear_svm(
     )
 
 
-# Depois do preprocessing e antes da avaliacao final, esta funcao compara os modelos e escolhe um.
-# Ela roda no centro do pipeline porque transforma treino em artefato final.
 def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = config or load_project_config()
     logger = get_logger(__name__, cfg.get("logging"))
@@ -500,12 +473,10 @@ def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None
     results: list[dict[str, Any]] = []
     trained_models: dict[str, Any] = {}
 
-    # treina cada modelo para variante baseline das features, depois treina cada modelo para variante reduzida com PCA (se habilitada), e guarda os resultados padronizados.
     for variant in feature_variants:
         feature_variant = variant["feature_variant"]
         variant_reduction_cfg = variant["reduction_config"]
 
-        # treinamento do Perceptron
         if modeling_cfg.get("perceptron", {}).get("enabled", True):
             logger.info("Training perceptron [%s]", feature_variant)
             out = _train_perceptron(
@@ -526,7 +497,6 @@ def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None
             results.append({k: v for k, v in out.items() if k != "model_obj"})
             trained_models[out["model_id"]] = out["model_obj"]
 
-        # treinamento da Decision Tree
         if modeling_cfg.get("decision_tree", {}).get("enabled", True):
             logger.info("Training decision_tree [%s]", feature_variant)
             out = _train_decision_tree(
@@ -547,7 +517,6 @@ def run(prep_result: dict[str, Any] | None = None, config: dict[str, Any] | None
             results.append({k: v for k, v in out.items() if k != "model_obj"})
             trained_models[out["model_id"]] = out["model_obj"]
 
-        # treinamento do SVM linear
         if modeling_cfg.get("linear_svm", {}).get("enabled", True):
             logger.info("Training linear_svm [%s]", feature_variant)
             out = _train_linear_svm(

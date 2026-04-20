@@ -14,8 +14,6 @@ from sklearn.preprocessing import OneHotEncoder, RobustScaler
 from src.utils import ensure_dir, get_logger, load_project_config, project_root
 
 
-# Antes de montar as features, esta funcao cria um encoder que entende categorias.
-# Ela roda antes do pre-processador porque o pipeline de colunas usa esse bloco.
 def _make_one_hot_encoder() -> OneHotEncoder:
     try:
         return OneHotEncoder(drop="first", handle_unknown="ignore", sparse_output=False)
@@ -23,20 +21,14 @@ def _make_one_hot_encoder() -> OneHotEncoder:
         return OneHotEncoder(drop="first", handle_unknown="ignore", sparse=False)
 
 
-# Antes de qualquer transformacao, esta funcao le CSV ou Parquet.
-# Ela roda cedo porque a etapa de preprocessing precisa de uma tabela em memoria.
 def load_dataset(data_path: str | Path) -> pd.DataFrame:
     return pd.read_parquet(data_path) if str(data_path).endswith(".parquet") else pd.read_csv(data_path)
 
 
-# Antes de separar treino e alvo, esta funcao tira colunas que nao ajudam.
-# Ela roda depois do load porque a limpeza vem logo no inicio do preprocessing.
 def drop_unused_features(df: pd.DataFrame, columns_to_drop: list[str]) -> pd.DataFrame:
     return df.drop(columns=columns_to_drop, errors="ignore")
 
 
-# Antes do treino, esta funcao separa as colunas de entrada da coluna resposta.
-# Ela roda depois da limpeza para evitar tentar treinar com a coluna alvo misturada.
 def prepare_features_and_target(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame, pd.Series]:
     if target_column not in df.columns:
         if f"{target_column}." in df.columns:
@@ -48,14 +40,10 @@ def prepare_features_and_target(df: pd.DataFrame, target_column: str) -> tuple[p
     return X, y
 
 
-# Antes do modelo ver os dados, esta funcao coloca os numeros numa escala mais calma.
-# Ela roda depois do split porque o ajuste do scaler deve olhar so para o treino.
 def build_numeric_transformer() -> Pipeline:
     return Pipeline([("scaler", RobustScaler())])
 
 
-# Antes de juntar tudo, esta funcao trata as categorias faltantes e cria colunas novas.
-# Ela roda no mesmo lugar do numeric transformer porque ambos alimentam o mesmo pre-processador.
 def build_categorical_transformer() -> Pipeline:
     return Pipeline(
         [
@@ -65,8 +53,6 @@ def build_categorical_transformer() -> Pipeline:
     )
 
 
-# Antes de criar a reducao, esta funcao arruma o bloco de configuracao.
-# Ela roda primeiro para dizer ao pipeline se a reducao vai existir ou nao.
 def _normalize_reduction_config(reduction_config: dict[str, Any] | None) -> dict[str, Any]:
     if reduction_config is None:
         return {"enabled": False, "compare_with_baseline": False}
@@ -85,8 +71,6 @@ def _normalize_reduction_config(reduction_config: dict[str, Any] | None) -> dict
     return cfg
 
 
-# Antes de encaixar a reducao no pipeline, esta funcao escolhe PCA ou TruncatedSVD.
-# Ela roda depois da configuracao porque precisa saber qual metodo o usuario pediu.
 def _make_dimensionality_reducer(reduction_config: dict[str, Any]) -> PCA | TruncatedSVD:
     method = reduction_config["method"]
     n_components = reduction_config["n_components"]
@@ -101,8 +85,6 @@ def _make_dimensionality_reducer(reduction_config: dict[str, Any]) -> PCA | Trun
     raise ValueError(f"Unsupported dimensionality reduction method: {method}")
 
 
-# Antes do treino, esta funcao monta o bloco de features que vira entrada do modelo.
-# Ela roda depois dos transformadores numerico e categorico porque junta tudo em um fluxo so.
 def build_preprocessor(
     numeric_columns: list[str] | None = None,
     categorical_columns: list[str] | None = None,
@@ -130,8 +112,6 @@ def build_preprocessor(
     )
 
 
-# Antes do treino e depois da ingestao, esta funcao prepara os dados e salva a versao limpa.
-# Ela roda no meio do fluxo porque gera as tabelas que as etapas seguintes vao usar.
 def run(df: pd.DataFrame | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = config or load_project_config()
     logger = get_logger(__name__, cfg.get("logging"))

@@ -8,8 +8,6 @@ import pandas as pd
 from src.utils import ensure_dir, get_logger, load_project_config, project_root
 
 
-# Antes do preprocessamento, esta funcao pega o CSV bruto e transforma em parquet.
-# Ela roda depois do start do pipeline porque prepara os dados para as proximas etapas.
 def run(config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = config or load_project_config()
     logger = get_logger(__name__, cfg.get("logging"))

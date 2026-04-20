@@ -8,8 +8,6 @@ import pandas as pd
 from src.utils import ensure_dir, get_logger, load_project_config, project_root, save_json
 
 
-# Antes do relatorio final, esta funcao olha os numeros e marca valores muito estranhos.
-# Ela roda primeiro porque ajuda a separar o que parece normal do que merece alerta.
 def _iqr_outliers(series: pd.Series) -> dict[str, Any]:
     clean = series.dropna()
     if clean.empty:
@@ -29,8 +27,6 @@ def _iqr_outliers(series: pd.Series) -> dict[str, Any]:
     }
 
 
-# Depois da ingestao, esta funcao revisa o dataset e guarda um relatorio de qualidade.
-# Ela roda antes do treino para impedir que dados ruins avancem pelo pipeline.
 def run(df: pd.DataFrame | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = config or load_project_config()
     logger = get_logger(__name__, cfg.get("logging"))

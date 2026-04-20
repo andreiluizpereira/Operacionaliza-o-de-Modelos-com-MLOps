@@ -1,5 +1,3 @@
-"""Shared utilities for the simple MLOps pipeline."""
-
 from __future__ import annotations
 
 import json
@@ -14,14 +12,10 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-# Antes de qualquer outra coisa, esta funcao diz onde esta a raiz do projeto.
-# Ela roda primeiro porque os outros arquivos usam esse caminho como mapa.
 def project_root() -> Path:
     return PROJECT_ROOT
 
 
-# Antes de ler os arquivos de configuracao, esta funcao abre um YAML do disco.
-# Ela vem antes do merge porque cada arquivo precisa ser lido separadamente.
 def load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -29,8 +23,6 @@ def load_yaml(path: Path) -> dict[str, Any]:
         return yaml.safe_load(fh) or {}
 
 
-# Serve para o caso em que dois arquivos definem a mesma chave de topo com subestruturas internas. A função evita que um bloco inteiro seja sobrescrito quando só uma parte dele deveria mudar.
-# Ela vem antes do carregamento final porque preserva os valores antigos e troca so o necessario.
 def _deep_merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     merged = dict(base)
     for key, value in incoming.items():
@@ -41,8 +33,6 @@ def _deep_merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any
     return merged
 
 
-# Antes do pipeline comecar, esta funcao junta todos os YAMLs num unico mapa.
-# Ela roda antes das etapas porque deixa a configuracao pronta em um so lugar.
 def load_project_config(config_dir: Path | None = None) -> dict[str, Any]:
     root = project_root()
     config_dir = config_dir or (root / "configs")
@@ -60,15 +50,11 @@ def load_project_config(config_dir: Path | None = None) -> dict[str, Any]:
     return merged
 
 
-# Antes de gravar qualquer arquivo, esta funcao garante que a pasta exista.
-# Ela vem antes da escrita para nao deixar o processo quebrar por falta de diretorio.
 def ensure_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-# Antes de salvar saidas do pipeline, esta funcao escreve um JSON bonitinho no disco.
-# Ela vem antes de relatórios e resumos porque padroniza como os dados sao guardados.
 def save_json(payload: Any, path: Path) -> Path:
     ensure_dir(path.parent)
     with path.open("w", encoding="utf-8") as fh:
@@ -76,8 +62,6 @@ def save_json(payload: Any, path: Path) -> Path:
     return path
 
 
-# Antes de qualquer log aparecer na tela, esta funcao monta o logger do projeto.
-# Ela vem antes das mensagens porque define como cada etapa vai conversar com a gente.
 def get_logger(name: str, logging_config: dict[str, Any] | None = None) -> logging.Logger:
     logger = logging.getLogger(name)
     if logger.handlers:
