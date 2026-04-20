@@ -302,17 +302,7 @@ O pipeline foi executado com sucesso e gerou:
 - modelo final serializado;
 - runs no MLflow.
 
-## 15. Limitações
-
-As principais limitações identificadas são:
-
-- o ajuste de hiperparâmetros mais completo foi aplicado apenas à árvore de decisão;
-- o modelo final ainda tem recall moderado para a classe positiva;
-- não há estratégia implementada de monitoramento de drift;
-- não há política formal de retreinamento;
-- a interface Streamlit apoia demonstração e uso local, mas não substitui uma API ou serviço de produção.
-
-## 16. Conclusão
+## 15. Conclusão
 
 O projeto atende ao entregável técnico de repositório organizado com pipeline de dados e modelos, código de experimentação e configuração de MLflow. Também possui resultados experimentais suficientes para justificar a abordagem final.
 
